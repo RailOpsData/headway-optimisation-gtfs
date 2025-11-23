@@ -6,7 +6,7 @@ cd ~
 export SUMO_HOME=/usr/share/sumo
 cd $SUMO_HOME
 
-## Installing Google Chrome on Ubuntu (for osmWebWizard)
+# Installing Google Chrome on Ubuntu (for osmWebWizard)
 sudo wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
 sudo dpkg -i google-chrome-stable_current_amd64.deb
 sudo apt --fix-broken install
@@ -14,6 +14,6 @@ sudo apt --fix-broken install
 export PYTHONPATH=$SUMO_HOME/tools
 cd $PYTHONPATH
 
-python3 python3 osmWebWizard.py
+python3 osmWebWizard.py
 
-
+# Run osmWebWizard, then use the system-recommended map size and tweak parameters as necessary.

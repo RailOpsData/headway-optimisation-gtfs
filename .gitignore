@@ -58,6 +58,9 @@ flow_output/
 *.pbf
 *.geojson
 
+# --- Script ---
+scripts/archive
+
 # --- Docker related ---
 docker/*.log
 docker/.env
