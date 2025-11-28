@@ -18,6 +18,7 @@ pydeps-env/
 !/data/
 !/data/**/
 !/data/**/.gitkeep
+/data/raw_save/
 /results/**
 !/results/
 !/results/**/
