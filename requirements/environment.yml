@@ -40,6 +40,7 @@ dependencies:
   - pip:
     - gtfs-realtime-bindings
     - kaleido>=0.2.1
+    - keplergl==0.3.2         # Notebook widget for map visualization
     - traci                   # Python client connects to SUMO via TraCI (Python側からSUMOに接続)
     - sumo-rl>=1.1.0
     - ray[rllib]>=2.47.0
