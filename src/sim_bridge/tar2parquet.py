@@ -298,18 +298,36 @@ def _process_single_json(args: Tuple[str, bytes, str]) -> Optional[Tuple[str, pl
 
 
 def _canonicalize_name_for_parser(original_name: str, feed_type: str, content: bytes) -> str:
-    """Return a filename matching parser regex using JSON header timestamp.
+    """Return a filename matching parser regex using JSON content.
 
-    Output pattern (no agency): gtfs_rt_{feed_type}_{YYYYMMDD_HHMMSS}.json
+    Output pattern with agency: gtfs_rt_{feed_type}_{agency}_{YYYYMMDD_HHMMSS}.json
+    Output pattern without agency: gtfs_rt_{feed_type}_{YYYYMMDD_HHMMSS}.json
     Falls back to 19700101_000000 if timestamp not found.
     """
     ts_str = "19700101_000000"
+    agency = None
+    
     try:
         feed = json.loads(content.decode("utf-8", errors="ignore"))
-        ts = None
+        
         if isinstance(feed, dict):
-            header = feed.get("header") or {}
-            ts = header.get("timestamp")
+            # 1. Extract agency from feed_name field (highest priority)
+            feed_name = feed.get("feed_name")
+            if feed_name and isinstance(feed_name, str):
+                # Normalize separators in feed_name
+                agency = str(feed_name).replace("-", "_").replace(".", "_").strip()
+            
+            # 2. Extract timestamp
+            ts = None
+            # Try feed-level timestamp first
+            ts = feed.get("timestamp")
+            
+            # Try header timestamp
+            if ts is None:
+                header = feed.get("header") or {}
+                ts = header.get("timestamp")
+            
+            # Try entity-level timestamps
             if ts is None:
                 ents = feed.get("entity") or []
                 for ent in ents:
@@ -320,13 +338,30 @@ def _canonicalize_name_for_parser(original_name: str, feed_type: str, content: b
                             ts = ent["vehicle"].get("timestamp")
                         if ts is not None:
                             break
-        if ts is not None:
-            ts_int = int(ts)
-            ts_str = datetime.utcfromtimestamp(ts_int).strftime("%Y%m%d_%H%M%S")
-    except Exception:
+            
+            # Try flat trip_updates/vehicle_positions lists
+            if ts is None:
+                if feed_type == 'trip_updates':
+                    tus = feed.get("trip_updates") or []
+                    if tus and isinstance(tus, list) and len(tus) > 0:
+                        ts = tus[0].get("timestamp") if isinstance(tus[0], dict) else None
+                elif feed_type == 'vehicle_positions':
+                    vps = feed.get("vehicle_positions") or []
+                    if vps and isinstance(vps, list) and len(vps) > 0:
+                        ts = vps[0].get("timestamp") if isinstance(vps[0], dict) else None
+            
+            if ts is not None:
+                ts_int = int(ts)
+                ts_str = datetime.utcfromtimestamp(ts_int).strftime("%Y%m%d_%H%M%S")
+    except Exception as e:
         pass
-    # feed_type expected to be 'trip_updates' or 'vehicle_positions'
-    return f"gtfs_rt_{feed_type}_{ts_str}.json"
+    
+    # Build filename with or without agency
+    # Pattern: gtfs_rt_{feed_type}_{agency}_{YYYYMMDD_HHMMSS}.json
+    if agency:
+        return f"gtfs_rt_{feed_type}_{agency}_{ts_str}.json"
+    else:
+        return f"gtfs_rt_{feed_type}_{ts_str}.json"
 
 
 def process_tar_to_normalized_parquet(
