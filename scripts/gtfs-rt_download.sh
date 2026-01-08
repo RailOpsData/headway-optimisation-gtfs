@@ -84,8 +84,10 @@ tar xf prod-gtfs-latest_raw_gtfs-rt_data_9.tar
 
 # バックグラウンドで実行する場合
 nohup python tar2parquet.py \
-    --tar-path ${LOCAL_SSD_DIR} \
+    --tar-dir ${LOCAL_SSD_DIR} \
     --output-dir ${LOCAL_SSD_DIR} > tar2parquet.log 2>&1 &
+
+ps aux | grep tar2parquet.py
 
 echo ""
 echo "Parquet conversion completed!"
