@@ -13,6 +13,13 @@ venv/
 env/
 pydeps-env/
 
+# --- Micromamba cache and environments ---
+mamba/
+.mambacache/
+micromamba_envs/
+envs/
+*.lock
+
 # --- Project artifacts ---
 /data/**
 !/data/
@@ -113,3 +120,4 @@ notebooks/.ipynb_checkpoints/
 # --- Reveal.js slides ---
 reveal-slides/node_modules/
 reveal-slides/assets/
+bin/
