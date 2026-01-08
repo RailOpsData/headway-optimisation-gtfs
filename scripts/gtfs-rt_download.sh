@@ -77,10 +77,15 @@ tar xf prod-gtfs-latest_raw_gtfs-rt_data_9.tar
 
 
 
-# 仮想環境activate必須：tar archiveを正規化されたparquet形式に変換
-python tar2parquet.py \
-    --tar-dir ${LOCAL_SSD_DIR} \
-    --output-dir ${PARQUET_OUTPUT_DIR} 
+# # 仮想環境activate必須：tar archiveを正規化されたparquet形式に変換
+# python tar2parquet.py \
+#     --tar-dir ${LOCAL_SSD_DIR} \
+#     --output-dir ${PARQUET_OUTPUT_DIR} 
+
+# バックグラウンドで実行する場合
+nohup python tar2parquet.py \
+    --tar-path ${LOCAL_SSD_DIR} \
+    --output-dir ${LOCAL_SSD_DIR} > tar2parquet.log 2>&1 &
 
 echo ""
 echo "Parquet conversion completed!"
