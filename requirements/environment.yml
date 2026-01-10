@@ -40,6 +40,7 @@ dependencies:
   # pip: TraCI client & RL libs, Plotly export (pip限定パッケージ)
 
   - pip:
+    - jupytext>=1.15.0
     - gtfs-realtime-bindings
     - kaleido>=0.2.1
     - keplergl>=0.3.7         # Notebook widget for map visualization (latest version)
