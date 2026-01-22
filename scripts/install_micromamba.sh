@@ -1,4 +1,26 @@
 #!/bin/bash
+set -e
+
+# Install micromamba into scripts/bin and initialize shell integration.
+DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(cd "$DIR/.." && pwd)"
+
+echo "Installing micromamba (1–2 min)..."
+
+# Ensure target bin exists in repo scripts
+mkdir -p "$DIR/bin"
+
+# Download and extract micromamba binary into scripts/bin
+curl -Ls https://micro.mamba.pm/api/micromamba/linux-64/latest | tar -xvj -C "$DIR" bin/micromamba
+
+# Initialize shell integration for bash with custom root prefix
+"$DIR/bin/micromamba" shell init --shell bash --root-prefix ~/micromamba
+
+# Optional: create project environment from environment.yml in repo
+# micromamba env create -f "$PROJECT_ROOT/requirements/environment.yml"
+
+echo "Installation complete. Run a new shell or source your shell rc to use micromamba."
+#!/bin/bash
 # install_micromamba.sh - Install Micromamba and create gtfs-sumo-rl environment
 
 set -e  # Exit immediately on error

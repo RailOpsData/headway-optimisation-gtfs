@@ -1,4 +1,39 @@
 #!/bin/bash
+set -e
+
+# Load environment variables from repo .env.local
+DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(cd "$DIR/.." && pwd)"
+if [ -f "$PROJECT_ROOT/.env.local" ]; then
+  set -a
+  source "$PROJECT_ROOT/.env.local"
+  set +a
+fi
+
+# Helper: show configured dirs
+echo "GCS_BUCKET=$GCS_BUCKET"
+echo "TAR_DIR=${TAR_DIR:-$PROJECT_ROOT/data/raw/parquet}"
+echo "PARQUET_OUTPUT_DIR=${PARQUET_OUTPUT_DIR:-$PROJECT_ROOT/data/bronze}"
+
+# Example: list GCS and prepare tar from repo data/raw
+gsutil ls || true
+
+# Move to repository data/raw directory
+cd "$PROJECT_ROOT/data/raw"
+
+# Create compressed tar for upload
+tar cf - . | pigz -9 > /tmp/gtfs-rt_data_9.tar.gz
+
+# Upload to GCS
+gsutil cp /tmp/gtfs-rt_data_9.tar.gz "${GCS_BUCKET}/${GCS_PREFIX_LATEST}/gtfs-rt_data_9.tar.gz"
+
+echo "Uploaded to ${GCS_BUCKET}/${GCS_PREFIX_LATEST}/"
+
+# Optional: convert tar to parquet (requires python script and env)
+if [ -n "$TAR_DIR" ] && [ -n "$PARQUET_OUTPUT_DIR" ]; then
+  python tar2parquet.py --tar-dir "${TAR_DIR}" --output-dir "${PARQUET_OUTPUT_DIR}"
+fi
+#!/bin/bash
 # Load environment variables from .env.local / .env.local から環境変数を読み込む
 set -a
 source "$(dirname "$0")/../.env.local"
