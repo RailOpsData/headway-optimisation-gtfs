@@ -118,6 +118,7 @@ notebooks/.ipynb_checkpoints/
 .envrc
 
 # --- Reveal.js slides ---
+reveal-slides/
 reveal-slides/node_modules/
 reveal-slides/assets/
 bin/
