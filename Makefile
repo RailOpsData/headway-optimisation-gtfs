@@ -16,6 +16,28 @@ COMPOSE_CMD ?= $(CONTAINER_RUNTIME) compose
 
 # Docker Compose configuration
 COMPOSE_FILE = docker/docker-compose.yml
+# Optional additional compose file (e.g. docker/docker-compose.dev.yml)
+COMPOSE_FILE_DEV ?= docker/docker-compose.dev.yml
+
+# Compose file flags (use multiple -f entries if needed)
+COMPOSE_FILES ?= -f $(COMPOSE_FILE)
+
+# Project and runtime flags
+COMPOSE_PROJECT_NAME ?= headway
+DETACH ?= -d
+SERVICES ?= dev
+LOGS_TAIL ?= 100
+
+# Build flag for `docker compose up` (set to "--build" when you need to rebuild images)
+# Example: `make jupyter-lab BUILD=--build`
+BUILD ?=
+
+# Host command to open VS Code (override if not available)
+CODE_CMD ?= code
+# Host command to open a browser (override if not available). Default to Chrome.
+# On some systems the binary may be `google-chrome-stable` or `google-chrome`.
+BROWSER_CMD ?= google-chrome
+
 
 # Build targets
 .PHONY: build-base build-ingest build-ingest-realtime build-sim build-train build-all
@@ -23,6 +45,7 @@ COMPOSE_FILE = docker/docker-compose.yml
 .PHONY: compose-ingest-realtime compose-ingest-realtime-loop compose-ingest-realtime-raw stop-realtime-loop
 .PHONY: compose-sumo-tutorial compose-sim compose-train
 .PHONY: clean help
+.PHONY: vscode jupyter-lab dev-logs compose-stop compose-down
 
 
 # Build base image (heavy dependencies once)
@@ -74,6 +97,43 @@ compose-sim:
 compose-train:
 	$(COMPOSE_CMD) -f $(COMPOSE_FILE) run --rm training
 
+# Open VS Code after starting compose in background
+# Usage examples:
+#  make vscode                    # start compose (background) and run `code .`
+#  make COMPOSE_FILES="-f docker/docker-compose.yml -f docker/docker-compose.dev.yml" vscode
+
+
+vscode:
+	@echo "⏳ Starting docker compose in background and opening VS Code..."
+	$(COMPOSE_CMD) $(COMPOSE_FILES) up $(DETACH) $(BUILD) $(SERVICES)
+	@# small delay to let containers start (tweak if necessary)
+	@sleep 1
+	@$(CODE_CMD) . || echo "⚠️ '$(CODE_CMD)' failed - running on headless host?"
+
+# Start the jupyter-lab service and open JupyterLab in the host browser
+# Usage: make jupyter-lab
+#        make COMPOSE_FILES="-f docker/docker-compose.yml -f docker/docker-compose.dev.yml" jupyter-lab
+
+
+jupyter-lab:
+	@echo "🔄 Starting docker compose (no specific jupyter service required)..."
+	$(COMPOSE_CMD) $(COMPOSE_FILES) up $(DETACH) $(BUILD) $(SERVICES)
+	@# Give services a moment to start
+	@sleep 1
+	@URL="http://localhost:8888/lab"; \
+	echo "➡️ Opening JupyterLab at $$URL"; \
+	$(BROWSER_CMD) "$$URL" || echo "⚠️ Could not open browser. Access JupyterLab at $$URL"
+
+# Stop running services (does not remove containers)
+compose-stop:
+	@echo "🛑 Stopping docker compose services..."
+	$(COMPOSE_CMD) $(COMPOSE_FILES) stop $(SERVICES)
+
+# Stop and remove containers, networks, volumes created by up
+compose-down:
+	@echo "🧹 Bringing docker compose down (removing containers/networks)..."
+	$(COMPOSE_CMD) $(COMPOSE_FILES) down $(SERVICES)
+
 # Real-time scheduler (short-lived tasks)
 scheduler-realtime:
 	CONTAINER_RUNTIME=$(CONTAINER_RUNTIME) COMPOSE_CMD="$(COMPOSE_CMD)" ./scripts/scheduler-realtime.sh
@@ -113,6 +173,10 @@ help:
 	@echo "  compose-sumo-tutorial - Run SUMO tutorial via compose with GUI"
 	@echo "  compose-sim  - Run simulation with compose"
 	@echo "  compose-train - Run training with compose"
+	@echo "  vscode       - Start compose (dev) and open VS Code"
+	@echo "  jupyter-lab  - Start compose (dev) and open JupyterLab in browser"
+	@echo "  compose-stop - Stop specified services (uses $(SERVICES))"
+	@echo "  compose-down - Stop and remove containers/networks created by compose"
 	@echo "  scheduler-realtime - Run real-time scheduler (RT data every 20s)"
 	@echo "  scheduler-realtime-once - Run real-time scheduler once"
 	@echo "  cron-setup   - Setup system cron for real-time data collection"
