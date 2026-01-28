@@ -22,4 +22,4 @@ USER appuser
 # Start JupyterLab on container start. Listen on all interfaces so docker
 # port-mapping can expose the service to the host. Token and password are
 # disabled here because composition maps the port to localhost for safety.
-CMD ["jupyter", "lab", "--ip=127.0.0.1", "--port=8888", "--no-browser", "--LabApp.token=", "--LabApp.password="]
+CMD ["jupyter", "lab", "--ip=0.0.0.0", "--port=8888", "--no-browser", "--LabApp.token=", "--LabApp.password="]
