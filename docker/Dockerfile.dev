@@ -8,6 +8,11 @@ FROM ${BASE_IMAGE}
 # Run as root for small adjustments, switch back to non-root later
 USER root
 
+# Install fonts for CJK and other languages
+RUN apt-get update \
+ && apt-get install -y fonts-noto-cjk fonts-ipafont \
+ && rm -rf /var/lib/apt/lists/*
+
 # Ensure /app exists and is owned by the non-root user
 WORKDIR /app
 RUN mkdir -p /app && chown -R appuser:appuser /app || true
@@ -17,4 +22,4 @@ USER appuser
 # Start JupyterLab on container start. Listen on all interfaces so docker
 # port-mapping can expose the service to the host. Token and password are
 # disabled here because composition maps the port to localhost for safety.
-CMD ["jupyter", "lab", "--ip=0.0.0.0", "--port=8888", "--no-browser", "--LabApp.token=", "--LabApp.password="]
+CMD ["jupyter", "lab", "--ip=127.0.0.1", "--port=8888", "--no-browser", "--LabApp.token=", "--LabApp.password="]
