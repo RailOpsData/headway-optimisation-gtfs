@@ -10,7 +10,8 @@ USER root
 
 # Install fonts for CJK and other languages
 RUN apt-get update \
- && apt-get install -y fonts-noto-cjk fonts-ipafont \
+ && apt-get install -y --no-install-recommends fontconfig fonts-noto-cjk fonts-ipafont \
+ && fc-cache -f -v \
  && rm -rf /var/lib/apt/lists/*
 
 # Ensure /app exists and is owned by the non-root user

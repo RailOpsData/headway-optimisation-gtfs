@@ -18,6 +18,7 @@ from pathlib import Path
 import polars as pl
 import seaborn as sns
 import matplotlib.pyplot as plt
+plt.rcParams['font.family'] = ['Noto Sans CJK JP', 'IPAPGothic', 'sans-serif']
 
 p = Path("/app/data/raw/chitetsu_tram/gtfs_jp_tram/stop_times.txt")
 st = pl.scan_csv(str(p), has_header=True)
@@ -50,6 +51,16 @@ stats = (
 		(pl.col("headway_s").std() / pl.col("headway_s").mean()).alias("cv_headway")
 	])
 ).collect()
+
+# %%
+from matplotlib import font_manager as fm, rcParams
+
+font_path = "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"  # fc-list 出力に合わせる
+
+fm.fontManager.addfont(font_path)
+fm.fontManager = fm.FontManager()
+rcParams['font.family'] = 'sans-serif'
+rcParams['font.sans-serif'] = ['Noto Sans CJK JP', 'IPAPGothic', 'DejaVu Sans']
 
 # %%
 stats_pd = stats.to_pandas()
