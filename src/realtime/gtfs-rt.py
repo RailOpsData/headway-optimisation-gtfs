@@ -17,6 +17,7 @@
 from pathlib import Path
 from datetime import date as dt
 import polars as pl
+import numpy as np
 pl.Config.set_tbl_rows(1000)
 
 # %% [markdown]
@@ -403,7 +404,7 @@ df_st_uni = df_st.filter(
 )
 df_st_uni #(85,3)
 
-# %% [markdown] jp-MarkdownHeadingCollapsed=true
+# %% [markdown]
 # ## 5.3. GTFS-rt(convined)とGTFS-JPの結合(df_merged):"6.2."でも利用
 
 # %%
@@ -420,10 +421,10 @@ null_count=df_merged["stop_name"].null_count()
 null_count #0
 
 # %% [markdown]
-# # 6. 緯度経度で最も近い距離を現在の距離として計算
+# # 6. realtime位置情報（緯度経度)と駅の位置情報(GTFS-JP緯度経度)から最寄り駅を計算
 
-# %% [markdown]
-# ## 6.1. GTFS-JPから富山駅～富山大学前の緯度経度を抽出
+# %% [markdown] jp-MarkdownHeadingCollapsed=true
+# ## 6.1. GTFS-JPから富山駅～富山大学前の位置情報（緯度経度）を抽出
 
 # %%
 uni = [
@@ -454,4 +455,63 @@ df_coords #(2477,2)
 
 # %% jupyter={"outputs_hidden": true}
 df_calc_base = df_coords.join(df_lat_lon, how="cross")
-df_calc_base.select(pl.col(["lat","stop_lat","lon","stop_lon","stop_name"])) #(19816,5)
+df_calc_base = df_calc_base.select(pl.col(["lat","stop_lat","lon","stop_lon","stop_name"])) #並べ替え
+df_calc_base #(19816,5)
+
+# %% [markdown]
+# ## 6.4. 各駅との距離を計算 
+
+# %% jupyter={"outputs_hidden": true}
+EQ_LON_DIST = 111320
+LAT_DIST = 111111
+
+df_with_dist = df_calc_base.with_columns(
+    # 1. 平均緯度の算出
+    ((pl.col("lat") + pl.col("stop_lat")) / 2).alias("lat_avg")
+).with_columns(
+    # 2. NumPyを使用して経度係数を算出
+    # np.deg2rad() で度からラジアンへ変換し、np.cos() を求めます
+    (np.cos(np.deg2rad(pl.col("lat_avg"))) * EQ_LON_DIST).alias("lon_factor")
+).with_columns(
+    # 3. 最終的な距離計算
+    (
+        ((pl.col("lat") - pl.col("stop_lat")) * LAT_DIST).pow(2) + 
+        ((pl.col("lon") - pl.col("stop_lon")) * pl.col("lon_factor")).pow(2)
+    ).sqrt().alias("distance_m")
+)
+
+# df_with_dist = df_calc_base.with_columns(
+#     (
+#         ((pl.col("lat") - pl.col("stop_lat")) * 111000).pow(2) + 
+#         ((pl.col("lon") - pl.col("stop_lon")) * 91000).pow(2)
+#     ).sqrt().alias("distance_m") # メートル単位の直線距離
+# )
+df_with_dist #(19816,6)
+
+# %% [markdown]
+# ## 6.5. それぞれの位置情報データから最寄駅算出
+
+# %%
+df_nearest_stop = (
+    df_with_dist.sort("distance_m")
+    .group_by(["lat", "lon"])
+    .first()
+)
+
+# 結果の表示
+df_nearest_stop = df_nearest_stop.select(pl.col(["lat","lon","stop_name","distance_m"]))
+df_nearest_stop.rename({"stop_name":"nearest_stop"})
+df_nearest_stop
+
+# %% [markdown]
+# ## 6.6. 計算された最寄り駅を位置情報をキーにして元のデータに結合
+
+# %%
+df_merged_neareststop = df_merged.join(
+    df_nearest_stop,
+    on = ["lat","lon"],
+    how = "inner"
+)
+df_merged_neareststop #(2954,15)になれば"5.3."との整合性がとれていることになる
+
+# %%
