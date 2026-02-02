@@ -19,10 +19,7 @@ from datetime import date as dt
 from datetime import time
 import polars as pl
 import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
-pl.Config.set_tbl_rows(1000)
+pl.Config.set_tbl_rows(30)
 
 # %% [markdown]
 # # 1. vehicle_positionsの読み込み
@@ -30,20 +27,20 @@ pl.Config.set_tbl_rows(1000)
 # %% [markdown]
 # ## 1.1. データ前処理
 #    - 車両idと取得時間で並べ替え
-#    - 取得時間6～9時台
+#    - 00:20-23:59
+#    
 
 # %%
 
-df = pl.read_parquet("/app/data/raw/chitetsu_tram/vehicle_positions/20251111.parquet")
+df = pl.read_parquet("/app/data/raw/chitetsu_tram/vehicle_positions/*.parquet")
 
 df = df.select(
     pl.all().exclude([s.name for s in df if s.null_count() == len(df)]))
 df = df.select(
     pl.exclude(["bearing","speed"]))
 df = df.sort(df["vehicle_id","snapshot_ts"]).filter(
-    (pl.col("snapshot_ts").dt.time() >= time(5, 20)) &
-    (pl.col("snapshot_ts").dt.time() <= time(23, 59))
-)
+    (pl.col("snapshot_ts").dt.time() >= time(0, 20)) &
+    (pl.col("snapshot_ts").dt.time() <= time(23, 59))).sort(pl.col(["snapshot_ts","vehicle_id"]))
     
 df
 
@@ -61,27 +58,27 @@ print(df["vehicle_id"].value_counts())
 # %% [markdown]
 # ## 2.0. （GTFS-JP）route_idから富山大学前にくるものを抽出
 
-# %% [markdown] jp-MarkdownHeadingCollapsed=true
+# %% [markdown]
 # ### 2.0.1. 静的時刻表データ(stop_times.txt)からtrip_idとstop_idを抽出
 
 # %%
 df_static = pl.read_csv("/app/data/raw/chitetsu_tram/gtfs_jp_tram/stop_times.txt").select(["trip_id","stop_headsign","stop_id","pickup_type","drop_off_type","timepoint","arrival_time","departure_time","stop_sequence"])
 df_static
 
-# %% [markdown] jp-MarkdownHeadingCollapsed=true
+# %% [markdown]
 # ### 2.0.2. 駅データ(stops.txt)から駅ナンバー(stop_id)と駅名(stop_name)を抽出
 
 # %%
 df_static_route = pl.read_csv("/app/data/raw/chitetsu_tram/gtfs_jp_tram/stops.txt").select(["stop_id","stop_name"])
 print(df_static_route)
 
-# %% [markdown] jp-MarkdownHeadingCollapsed=true
+# %% [markdown]
 # ### 2.0.3. 駅データ（stops.txt）の駅ナンバー(stop_id)と駅名(stop_name)が重複していないか確認
 
 # %%
 print(df_static_route.group_by(["stop_id","stop_name"]).len())
 
-# %% [markdown] jp-MarkdownHeadingCollapsed=true
+# %% [markdown]
 # ### 2.0.4. 静的時刻表データ(stop_times.txt)と駅データ(stops.txt)の結合操作(2.0.1更新時必ず実行)
 # - 静的時刻表データ(stops_times.txt)に
 # - 駅データ(stops.txt)を追加するために
@@ -96,25 +93,26 @@ df_stops = df_static.join(
 )
 df_stops
 
-# %% [markdown] jp-MarkdownHeadingCollapsed=true
+# %% [markdown]
 # ### 2.0.5. 結合した静的時刻表データ（駅名付き）(df_stop)の区間を駅名で絞り込み（駅名が諏訪川原-富山大学前間)
 # 方針：**合流のない区間を選択（諏訪川原-富山大学前）し、そこを通るroute_idを選定し、合流ふくむ区間も含めて全体（富山駅～富山大学前）で調査する**<br>
 # 意図：合流区間を含むとその区間を通過する別ルート(route_id)も含まれてしまう
 
 # %%
-df_stops_daigakumae = df_stops.filter(
-    pl.col("stop_name").is_in([
-        # "富山駅",
-        # "新富町",
-        # "県庁前",
-        # "丸の内",
-        "諏訪川原",
-        "安野屋",
-        "トヨタモビリティ富山Gスクエア五福前",
-        "富山大学前"
-    ])
-)
-df_stops_daigakumae
+df_stops_all = df_stops
+# df_stops.filter(
+#     pl.col("stop_name").is_in([
+#         # "富山駅",
+#         # "新富町",
+#         # "県庁前",
+#         # "丸の内",
+#         "諏訪川原",
+#         "安野屋",
+#         "トヨタモビリティ富山Gスクエア五福前",
+#         "富山大学前"
+#     ])
+# )
+df_stops_all
 
 # %% [markdown] jp-MarkdownHeadingCollapsed=true
 # ### 2.0.6. 結合された静的時刻表データ（駅名付きかつ、対象区間絞り込み済）(df_stop)のtrip_idから運行曜日ならびにroute_idを抽出
@@ -124,26 +122,29 @@ df_stops_daigakumae
 # 富山地鉄軌道線・富山港線においてはtrip_idにroute_idが含まれた形式になっているため：2.0.7.でその組み合わせと行先を抽出
 
 # %%
-df_extracted = df_stops_daigakumae.with_columns([
+df_extracted = df_stops_all.with_columns([
     pl.col("trip_id").str.extract(r"^([^_%]+)", 1).alias("service_day"),
     pl.col("trip_id").str.extract(r"系統(.*)$", 1).alias("route_id")
 ])
 df_extracted
 
 # %%
-print(df_extracted["route_id"].unique())
+df_extracted["route_id"].unique()
 
 # %% [markdown] jp-MarkdownHeadingCollapsed=true
 # ### 2.0.7. route_idごとの行先表示と個数を確認
 
 # %%
-df_counts = df_extracted.group_by(["route_id", "stop_headsign"]).len()
+df_counts = df_extracted.group_by(["service_day","route_id", "stop_headsign"]).len().sort(pl.col(["service_day","route_id"]))
 df_counts
 
-# %% [markdown] jp-MarkdownHeadingCollapsed=true
+# %% [markdown]
 # ### 2.0.8. (Appendix)駅名、出発時間のこの順番でソートし、各駅の時刻表を作成
 
-# %% [markdown]
+# %%
+df_extracted.sort()
+
+# %% [markdown] jp-MarkdownHeadingCollapsed=true
 # ## 2.1. （GTFS-rt,trip_updates）データ前処理
 #    - 車両idと取得時間で並べ替え
 #    - 取得時間6～9時台
@@ -151,25 +152,26 @@ df_counts
 #    - 取得時間、route_id、車両IDのみ表示
 
 # %%
-df_t = pl.read_parquet("/app/data/raw/chitetsu_tram/trip_updates/20251104.parquet")
-df_t = df_t.select(
-    pl.all().exclude([s.name for s in df_t if s.null_count() == len(df_t)]))
+df_t = pl.read_parquet("/app/data/raw/chitetsu_tram/trip_updates/*.parquet")
+# df_t = df_t.select(
+#     pl.all().exclude([s.name for s in df_t if s.null_count() == len(df_t)]))
 
 df_t = df_t.select(
     pl.exclude(["start_time","start_date"]))
 df_t = df_t.sort(df_t["vehicle_id","snapshot_ts"])\
-    # .filter(
-    # (pl.col("snapshot_ts").dt.time() >= time(0, 00)) &
-    # (pl.col("snapshot_ts").dt.time() <= time(23, 59)))\
     .filter(
-        pl.col("route_id").is_in(["市内軌道線(3001-2-1)","市内軌道線(3001-2-2)" #南富山発着
-                                      ,"富山港線（富山大学前）(3003-5-2)","富山港線（富山大学前）(3003-5-1)" #岩瀬浜発着
-                                      ,"市内軌道線(3001-8-1)","市内軌道線(3001-8-2)" #富山駅発着
-                                      ,"富山港線（富山大学前）(3003-5-2-1)","富山港線（富山大学前）(3003-5-1-1)" #越中中島発着
-                                                   ]))\
-    .select(pl.col(["snapshot_ts","route_id","vehicle_id"]))
+    (pl.col("snapshot_ts").dt.time() >= time(5, 20)) &
+    (pl.col("snapshot_ts").dt.time() <= time(23, 59)))\
+    # .filter(
+    #     pl.col("route_id").is_in(["市内軌道線(3001-2-1)","市内軌道線(3001-2-2)" #南富山発着
+    #                                   ,"富山港線（富山大学前）(3003-5-2)","富山港線（富山大学前）(3003-5-1)" #岩瀬浜発着
+    #                                   ,"市内軌道線(3001-8-1)","市内軌道線(3001-8-2)" #富山駅発着
+    #                                   ,"富山港線（富山大学前）(3003-5-2-1)","富山港線（富山大学前）(3003-5-1-1)" #越中中島発着
+    #                                                ]))\
 # df_t.filter(pl.col("vehicle_id")=="chitetsu_tram_4983")
-df_t #(9806,3)件
+# df_t.describe()
+df_t = df_t.select(pl.exclude("entity_id","tu_timestamp","delay"))
+df_t
 
 # %% [markdown]
 # ## 2.2. 確認　
@@ -183,29 +185,26 @@ print(df_t["vehicle_id"].value_counts().sort("vehicle_id"))
 # print(df_t["snapshot_ts"].value_counts())
 
 # %% [markdown]
-# # 3. vehicle_id追加処理および重複カウントと削除
+# # 3. vehicle_positionsの追加処理および重複カウントと削除
 
 # %% [markdown]
-# ## 3.1. "2.2."で確認した車両IDのみにfilter:
+# ## 3.1. "2.2."で確認した車両IDのみVehicle_positionsをfilter：全路線対応ならスキップ
 
 # %%
-target_vehicles = [
-    "chitetsu_tram_4980", "chitetsu_tram_4981","chitetsu_tram_4983", "chitetsu_tram_4984", 
-    "chitetsu_tram_4985", "chitetsu_tram_4986", "chitetsu_tram_4987", 
-    "chitetsu_tram_4989", "chitetsu_tram_4990", "chitetsu_tram_4991", 
-    "chitetsu_tram_4992", "chitetsu_tram_4993", "chitetsu_tram_4994","chitetsu_tram_4995", 
-    "chitetsu_tram_5001", "chitetsu_tram_5004", "chitetsu_tram_5005", 
-    "chitetsu_tram_5006", "chitetsu_tram_5007", "chitetsu_tram_5008", "chitetsu_tram_5010","chitetsu_tram_5011", "chitetsu_tram_5012"
-]
+# target_vehicles = [
+#     "chitetsu_tram_4980", "chitetsu_tram_4981","chitetsu_tram_4983", "chitetsu_tram_4984", 
+#     "chitetsu_tram_4985", "chitetsu_tram_4986", "chitetsu_tram_4987", 
+#     "chitetsu_tram_4989", "chitetsu_tram_4990", "chitetsu_tram_4991", 
+#     "chitetsu_tram_4992", "chitetsu_tram_4993", "chitetsu_tram_4994","chitetsu_tram_4995", 
+#     "chitetsu_tram_5001", "chitetsu_tram_5004", "chitetsu_tram_5005", 
+#     "chitetsu_tram_5006", "chitetsu_tram_5007", "chitetsu_tram_5008", "chitetsu_tram_5010","chitetsu_tram_5011", "chitetsu_tram_5012"
+# ]
 
-df_filtered = df.filter(
-    pl.col("vehicle_id").is_in(target_vehicles)
-)
+# df_filtered = df.filter(
+#     pl.col("vehicle_id").is_in(target_vehicles)
+# )
 
-df_filtered 
-
-# %% [markdown] jp-MarkdownHeadingCollapsed=true
-#
+# df_filtered 
 
 # %% [markdown]
 # ## 3.2. 重複している行をカウント・削除（vehicle_positions）
@@ -215,7 +214,7 @@ df_filtered
 
 # %%
 duplicate_count = (
-    df_filtered.group_by(["snapshot_ts", "vehicle_id","lat","lon"])
+    df.group_by(["snapshot_ts", "vehicle_id","lat","lon"])
     .len() # 各グループの行数を数える
     .filter(pl.col("len") > 1) # 1行より多い（重複している）ものだけ抽出
 )
@@ -223,7 +222,7 @@ duplicate_count = (
 print(duplicate_count)
 
 # %%
-df_v_cleaned = df_filtered.unique(subset=["snapshot_ts", "vehicle_id"],keep="first")
+df_v_cleaned = df.unique(subset=["snapshot_ts", "vehicle_id"],keep="first").sort(pl.col(["vehicle_id","snapshot_ts"]))
 df_v_cleaned #(8532,10)/(25171,10)
 
 # %% [markdown]
@@ -314,7 +313,7 @@ df_imputed #(8532,11)/(25171,11)
 rate = df_imputed["route_id"].null_count() / len(df_imputed)
 print(f"route_idの欠損率: {rate:.2%}") #(16.63%)/(28.85%)
 
-# %% [markdown]
+# %% [markdown] jp-MarkdownHeadingCollapsed=true
 # ### ここまでで補完しきれなかったデータ
 # 1. 各車両IDの一番初めの行と一番最後の行
 # 2. 南富山方面への運用に入るもの（trip_updateの時点で除外しているため）
@@ -332,7 +331,7 @@ df_ch2 = df_check2.select(["current_stop_sequence","lat","lon","snapshot_ts","ve
     # ~pl.col("vehicle_id").eq("chitetsu_tram_4980"))
 df_ch2.sort(pl.col(["vehicle_id","snapshot_ts"])) #(1496,6)/(7367,6)
 
-# %% [markdown]
+# %% [markdown] jp-MarkdownHeadingCollapsed=true
 # ### ルート情報（route_id）が欠損しているまたはその前後1行の車両ID(vehicle_id)の数
 # - 数十件あり：南富山方面を含む車両ID
 # - 数件のみ：運用の折り返しの都合で前後ルート情報(route_id)が欠損している
@@ -340,7 +339,7 @@ df_ch2.sort(pl.col(["vehicle_id","snapshot_ts"])) #(1496,6)/(7367,6)
 # %%
 df_ch2["vehicle_id"].value_counts().sort("vehicle_id") #(17,2)
 
-# %% [markdown]
+# %% [markdown] jp-MarkdownHeadingCollapsed=true
 # ### ルート情報（route_id）が欠損している行の車両ID(vehicle_id)の数ならびに該当する行
 
 # %%
@@ -351,7 +350,7 @@ df_ch3 #(1419,11)/(7263,11)
 # %%
 df_ch3["vehicle_id"].value_counts().sort("vehicle_id") #(13,2)/(21,2)
 
-# %% [markdown]
+# %% [markdown] jp-MarkdownHeadingCollapsed=true
 # ### ルート情報(route_id)が欠損している行を削除
 
 # %%
@@ -365,7 +364,7 @@ df_clean.select(["snapshot_ts","vehicle_id","lat","lon","current_stop_sequence",
 # %%
 df_clean_rn = df_clean.rename({"route_id":"route_id_name"})
 
-# %% [markdown]
+# %% [markdown] jp-MarkdownHeadingCollapsed=true
 # ## 4.5. 行先ふくむルート情報(route_id_name)から数字のみのルート情報(route_id)を正規表現で抽出
 
 # %% jupyter={"outputs_hidden": true}
@@ -381,7 +380,7 @@ df_rt.select(["snapshot_ts","vehicle_id","lat","lon","current_stop_sequence","ro
 # %% [markdown]
 # # 5. GTFS-JPと結合(2.0.6.のroute_idが抽出された静的時刻表データを利用)
 
-# %% [markdown]
+# %% [markdown] jp-MarkdownHeadingCollapsed=true
 # ## 5.1. (GTFS-JP)route_idの抽出・
 # ルート情報(route_id)内、ルートにおける幾つめの停車駅か？(stop_sequence)、電停名(stop_name)の組み合わせの数
 
@@ -394,7 +393,7 @@ df_st =df_st.unique(subset=["route_id","stop_sequence","stop_name"],keep="first"
     .select(pl.col(["route_id","stop_sequence","stop_name"])).sort(pl.col(["route_id","stop_sequence"]))
 df_st #(349,3)
 
-# %% [markdown]
+# %% [markdown] jp-MarkdownHeadingCollapsed=true
 # ## 5.2. （GTFS-JP）富山駅から大学前までに絞り込み(stop_sequence)(df_st_uni)
 # ルート(route_id)、ルートにおける幾つめの駅か？(stop_sequence)、駅名(stop_name)
 # ここには別系統の環状線も含まれる
@@ -415,7 +414,7 @@ df_st_uni = df_st.filter(
 )
 df_st_uni #(85,3)
 
-# %% [markdown]
+# %% [markdown] jp-MarkdownHeadingCollapsed=true
 # ## 5.3. GTFS-rt(df_rt)とGTFS-JP(df_st_uni)の結合(df_merged):"6.2."でも利用
 
 # %%
@@ -434,27 +433,27 @@ null_count #0
 # %% [markdown]
 # # 6. realtime位置情報（緯度経度)と駅の位置情報(GTFS-JP緯度経度)から最寄り駅を計算
 
-# %% [markdown]
+# %% [markdown] jp-MarkdownHeadingCollapsed=true
 # ## 6.1. GTFS-JPから富山駅～富山大学前の位置情報（緯度経度）を抽出
 
 # %%
-# uni = [
-#         "富山駅",
-#         "新富町",
-#         "県庁前",
-#         "丸の内",
-#         "諏訪川原",
-#         "安野屋",
-#         "トヨタモビリティ富山Gスクエア五福前",
-#         "富山大学前"
-#     ]
+uni = [
+        "富山駅",
+        "新富町",
+        "県庁前",
+        "丸の内",
+        "諏訪川原",
+        "安野屋",
+        "トヨタモビリティ富山Gスクエア五福前",
+        "富山大学前"
+    ]
 
 df_lat_lon = pl.read_csv("/app/data/raw/chitetsu_tram/gtfs_jp_tram/stops.txt")\
     .select(pl.col(["stop_name","stop_lat","stop_lon"]))\
-    # .filter(pl.col("stop_name").is_in(uni))
+    .filter(pl.col("stop_name").is_in(uni))
 df_lat_lon #(8,3)
 
-# %% [markdown]
+# %% [markdown] jp-MarkdownHeadingCollapsed=true
 # ## 6.2. GTFS-rt("5.3.で前処理済のもの")から位置情報（緯度経度の組み合わせ）が一意なものを抽出
 
 # %% jupyter={"outputs_hidden": true}
@@ -464,12 +463,12 @@ df_coords #(2477,2)/(6077,2)
 # %% [markdown] jp-MarkdownHeadingCollapsed=true
 # ## 6.3. realtimeデータの取得位置情報と各駅の位置情報のすべての組み合わせを代入
 
-# %%
+# %% jupyter={"outputs_hidden": true}
 df_calc_base = df_coords.join(df_lat_lon, how="cross")
 df_calc_base = df_calc_base.select(pl.col(["lat","stop_lat","lon","stop_lon","stop_name"])) #並べ替え
 df_calc_base #(19816,5)/(48616,5)
 
-# %% [markdown]
+# %% [markdown] jp-MarkdownHeadingCollapsed=true
 # ## 6.4. 各駅との距離を計算 
 
 # %%
@@ -564,14 +563,14 @@ df_with_trip_count = df_result.sort(["vehicle_id", "snapshot_ts"]).with_columns(
 )
 df_with_trip_count #(2954,15)/(7499,15)
 
-# %% [markdown]
+# %% [markdown] jp-MarkdownHeadingCollapsed=true
 # ## 6.9. 「車両」「便番号」「シーケンス番号」の3つでグループ化
 # #### 「〇便目の〇番目の駅」ごとに、最も近づいた瞬間を取得
 # - 車両が混ざらないように車両IDを並べ替え第一優先にする
 # - 同じ運用内での最寄り駅との距離を見るために便番号を第二優先にする
 # - 停車駅の順番は上記の中であれば一意に昇順であるはずなので、時間的なソートにもなる
 
-# %% jupyter={"outputs_hidden": true}
+# %%
 df_final_approach = (
     df_with_trip_count.sort("distance_m")
     .group_by(["vehicle_id", "trip_count", "current_stop_sequence_loc"])
@@ -616,10 +615,10 @@ df_with_context = df_with_direction.with_columns(
 # df_with_context
 df_with_context["required_compensation"].value_counts()
 
-# %% [markdown] jp-MarkdownHeadingCollapsed=true
+# %% [markdown]
 # ### 7.2.2. 要補完の行を並べ替えて出力
 
-# %%
+# %% jupyter={"outputs_hidden": true}
 df_with_context.filter(pl.col(["required_compensation"])).sort(pl.col(["vehicle_id","snapshot_ts"]))
 
 # %% [markdown]
@@ -650,7 +649,7 @@ df_with_context_adjacent.filter(pl.col(["is_target_context"])).sort(pl.col(["veh
 # %% [markdown]
 # ## 7.4. distance_mが50m以内のものを選定
 
-# %%
+# %% jupyter={"outputs_hidden": true}
 df_with_direction.filter(pl.col("distance_m") < 50)
 
 # %% [markdown]
@@ -715,75 +714,5 @@ timetable
 
 # %%
 timetable.write_csv("timetable_daigakumae.csv")
-
-# %%
-import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
-
-
-# 1. Pandas(pd)で読み込み、変数名を df に統一
-df = pd.read_csv("timetable_daigakumae.csv")
-
-plot_data = []
-
-# もし vehicle_id, trip_count, direction_id があるなら df.columns[3:]
-stations = df.columns[3:] 
-
-for station in stations:
-    # 列全体をPandasのSeriesとして取得し、datetimeに変換
-    # ここで df[station] が正しく Series オブジェクトである必要があります
-    col_data = pd.to_datetime(df[station], format='%H:%M:%S', errors='coerce').dropna().sort_values()
-    
-    # 待ち時間を計算
-    intervals = (col_data.shift(-1) - col_data).dt.total_seconds() / 60.0
-    
-    for t, interval in zip(col_data, intervals):
-        if pd.notnull(interval):
-            plot_data.append({
-                '時刻': t,
-                '待ち時間(分)': interval,
-                '駅名': station
-            })
-
-plot_df = pd.DataFrame(plot_data)
-
-name_map = {
-    '富山駅': 'Toyama Sta.',
-    '新富町': 'Shintomicho',
-    '県庁前': 'Kencho-mae',
-    '丸の内': 'Marunouchi',
-    '諏訪川原': 'Suwanokawara',
-    '安野屋': 'Yasunoya',
-    'トヨタモビリティ富山Gスクエア五福前': 'ToyotamobilityToyamaGsquareGofukumae',
-    '富山大学前': 'Toyamadaigakumae',
-}
-
-# グラフ用のデータフレームの駅名を英語に置換
-plot_df['Stations_name'] = plot_df['駅名'].map(name_map)
-
-# グラフ作成（hueに英語の列を指定）
-sns.lineplot(data=plot_df, x='時刻', y='待ち時間(分)', hue='Stations_name')
-
-# --- グラフ作成 ---
-start_time = pd.to_datetime('06:00:00', format='%H:%M:%S')
-end_time = pd.to_datetime('07:00:00', format='%H:%M:%S')
-
-plt.figure(figsize=(12, 6))
-# data=plot_df と指定することで、plot_df（DataFrame型）を渡していることを確実にします
-sns.lineplot(data=plot_df, x='時刻', y='待ち時間(分)', hue='Stations_name', marker='o')
-plt.ylim(0, 30)
-plt.title('駅別・時間帯別の運転間隔（待ち時間）の推移')
-plt.xlim(start_time, end_time)
-plt.xlabel('time')
-plt.ylabel('headway')
-plt.grid(True, linestyle='--', alpha=0.6)
-plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-plt.tight_layout()
-
-plt.show()
-
-# %%
-df
 
 # %%
