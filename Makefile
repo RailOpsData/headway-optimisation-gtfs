@@ -45,7 +45,7 @@ BROWSER_CMD ?= google-chrome
 .PHONY: compose-ingest-realtime compose-ingest-realtime-loop compose-ingest-realtime-raw stop-realtime-loop
 .PHONY: compose-sumo-tutorial compose-sim compose-train
 .PHONY: clean help
-.PHONY: vscode jupyter-lab dev-logs compose-stop compose-down
+.PHONY: vscode jupyter-lab dev-logs compose-stop-dev compose-down
 
 
 # Build base image (heavy dependencies once)
@@ -125,7 +125,7 @@ jupyter-lab:
 	$(BROWSER_CMD) "$$URL" || echo "⚠️ Could not open browser. Access JupyterLab at $$URL"
 
 # Stop running services (does not remove containers)
-compose-stop:
+compose-stop-dev:
 	@echo "🛑 Stopping docker compose services..."
 	$(COMPOSE_CMD) $(COMPOSE_FILES) stop $(SERVICES)
 
@@ -175,7 +175,7 @@ help:
 	@echo "  compose-train - Run training with compose"
 	@echo "  vscode       - Start compose (dev) and open VS Code"
 	@echo "  jupyter-lab  - Start compose (dev) and open JupyterLab in browser"
-	@echo "  compose-stop - Stop specified services (uses $(SERVICES))"
+	@echo "  compose-stop-dev - Stop specified services (uses $(SERVICES))"
 	@echo "  compose-down - Stop and remove containers/networks created by compose"
 	@echo "  scheduler-realtime - Run real-time scheduler (RT data every 20s)"
 	@echo "  scheduler-realtime-once - Run real-time scheduler once"
